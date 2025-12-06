@@ -575,6 +575,106 @@
             font-weight: 600;
             color: #333;
         }
+
+        /* Mobile Responsive Styles */
+        .mobile-header {
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px 20px;
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+            flex-shrink: 0;
+        }
+
+        .mobile-menu-btn {
+            background: none;
+            border: none;
+            font-size: 24px;
+            color: #333;
+            cursor: pointer;
+            padding: 0;
+        }
+
+        .mobile-close-btn {
+            display: none;
+            background: none;
+            border: none;
+            font-size: 20px;
+            color: #666;
+            cursor: pointer;
+            padding: 5px;
+        }
+
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 99;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed;
+                left: 0;
+                top: 0;
+                bottom: 0;
+                width: 280px;
+                transform: translateX(-100%);
+                z-index: 1000;
+                box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+            }
+
+            .sidebar.mobile-open {
+                transform: translateX(0);
+                width: 280px;
+                /* Ensure width is reset if it was collapsed */
+            }
+
+            .sidebar.closed {
+                width: 280px;
+                /* Disable collapsed state on mobile */
+            }
+
+            /* Hide desktop toggle on mobile */
+            .sidebar-toggle {
+                display: none;
+            }
+
+            .mobile-close-btn {
+                display: block;
+            }
+
+            .chat-main {
+                width: 100%;
+                margin-left: 0;
+            }
+
+            .mobile-header {
+                display: flex;
+            }
+
+            /* Adjust chat padding for mobile */
+            .chat-messages {
+                padding: 15px;
+            }
+
+            .message {
+                max-width: 90%;
+            }
+
+            .chat-input-container {
+                padding: 15px;
+            }
+
+            .chat-input {
+                padding: 12px 50px 12px 12px;
+            }
+        }
     </style>
     <!-- Marked.js for Markdown parsing -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -594,6 +694,9 @@
                 </div>
                 <button class="sidebar-toggle">
                     <i class="bi bi-chevron-left"></i>
+                </button>
+                <button class="mobile-close-btn">
+                    <i class="bi bi-x-lg"></i>
                 </button>
             </div>
 
@@ -645,8 +748,22 @@
             </div>
         </div>
 
+        <!-- Sidebar Overlay -->
+        <div class="sidebar-overlay"></div>
+
         <!-- Main Chat Area -->
         <div class="chat-main">
+            <!-- Mobile Header -->
+            <div class="mobile-header">
+                <button class="mobile-menu-btn">
+                    <i class="bi bi-list"></i>
+                </button>
+                <div class="logo" style="font-size: 20px;">
+                    <img src="{{ asset('img/socxo.png') }}" alt="Socxo" style="height: 30px;">
+                </div>
+                <div style="width: 24px;"></div> <!-- Spacer for centering -->
+            </div>
+
             <div class="chat-messages" id="chat-box">
                 @if ($messages->isEmpty())
                     <div class="empty-chat-state">
@@ -841,7 +958,7 @@
                                     noChatsMsg.remove();
                                     chatListSection.append(
                                         '<div class="chat-list-title" style="margin-top: 15px;">Chats Recent</div>'
-                                        );
+                                    );
                                 }
 
                                 const newChatHtml = `
@@ -910,9 +1027,33 @@
                 });
             });
 
-            // Sidebar toggle functionality
+            // Sidebar toggle functionality (Desktop)
             $('.sidebar-toggle').on('click', function() {
                 $('.sidebar').toggleClass('closed');
+            });
+
+            // Mobile Menu Functionality
+            const sidebar = $('.sidebar');
+            const overlay = $('.sidebar-overlay');
+
+            $('.mobile-menu-btn').on('click', function() {
+                sidebar.addClass('mobile-open');
+                overlay.fadeIn(200);
+            });
+
+            function closeMobileMenu() {
+                sidebar.removeClass('mobile-open');
+                overlay.fadeOut(200);
+            }
+
+            $('.mobile-close-btn').on('click', closeMobileMenu);
+            overlay.on('click', closeMobileMenu);
+
+            // Close sidebar when clicking a chat item on mobile
+            $(document).on('click', '.chat-item', function() {
+                if ($(window).width() <= 768) {
+                    closeMobileMenu();
+                }
             });
 
             // Message Actions
