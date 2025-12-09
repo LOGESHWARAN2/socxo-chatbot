@@ -828,6 +828,19 @@
             const messageInput = $('#message-input');
             const charCount = $('#char-count');
             let currentConversationId = '{{ $currentConversation->id ?? '' }}';
+            const apiToken = '{{ $apiToken ?? '' }}';
+
+            // Global AJAX Setup for Authorization
+            if (apiToken) {
+                $.ajaxSetup({
+                    headers: {
+                        'Authorization': 'Bearer ' + apiToken,
+                        'Accept': 'application/json'
+                    }
+                });
+            } else {
+                console.warn('API Token not found');
+            }
 
             // Configure marked
             marked.setOptions({

@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
 use App\Models\Message;
 use App\Services\GeminiService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class ChatController extends Controller
@@ -19,15 +19,18 @@ class ChatController extends Controller
 
     public function index()
     {
+        $user = Auth::user();
+        $apiToken = $user->createToken('chat-app')->plainTextToken;
+
+        // Start with a new chat by default
         $conversations = \App\Models\Conversation::where('user_id', Auth::id())
             ->orderBy('updated_at', 'desc')
             ->get();
-            
-        // Start with a new chat by default
         $currentConversation = null;
         $messages = collect();
 
-        return view('chat', compact('conversations', 'currentConversation', 'messages'));
+        // Pass API token to view
+        return view('chat', compact('conversations', 'currentConversation', 'messages', 'apiToken'));
     }
 
     public function newChat()
@@ -37,6 +40,9 @@ class ChatController extends Controller
 
     public function loadConversation($uuid)
     {
+        $user = Auth::user();
+        $apiToken = $user->createToken('chat-app')->plainTextToken;
+
         $conversation = \App\Models\Conversation::where('user_id', Auth::id())->where('uuid', $uuid)->firstOrFail();
         
         $conversations = \App\Models\Conversation::where('user_id', Auth::id())
@@ -45,7 +51,7 @@ class ChatController extends Controller
         $messages = $conversation->messages;
         $currentConversation = $conversation;
 
-        return view('chat', compact('conversations', 'currentConversation', 'messages'));
+        return view('chat', compact('conversations', 'currentConversation', 'messages', 'apiToken'));
     }
 
     public function sendMessage(Request $request)
@@ -58,19 +64,20 @@ class ChatController extends Controller
 
         try {
             $user = Auth::user();
-            if (!$user) {
+            if (! $user) {
                 \Log::error('User not authenticated in sendMessage');
+
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
 
             $messageContent = $request->input('message');
             $conversationId = $request->input('conversation_id');
-            
+
             // Create new conversation if ID is not provided
-            if (!$conversationId) {
+            if (! $conversationId) {
                 $conversation = \App\Models\Conversation::create([
                     'user_id' => $user->id,
-                    'title' => substr($messageContent, 0, 30) . '...',
+                    'title' => substr($messageContent, 0, 30).'...',
                 ]);
                 $conversationId = $conversation->id;
             } else {
@@ -121,8 +128,9 @@ class ChatController extends Controller
                 'conversation_title' => $conversation->title,
             ]);
         } catch (\Exception $e) {
-            \Log::error('Error in sendMessage: ' . $e->getMessage());
-            return response()->json(['error' => 'Internal Server Error: ' . $e->getMessage()], 500);
+            \Log::error('Error in sendMessage: '.$e->getMessage());
+
+            return response()->json(['error' => 'Internal Server Error: '.$e->getMessage()], 500);
         }
     }
 }
