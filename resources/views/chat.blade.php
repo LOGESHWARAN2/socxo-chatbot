@@ -356,13 +356,29 @@
         .message-action-btn {
             background: none;
             border: none;
-            color: #999;
+            color: #aaa;
             cursor: pointer;
-            padding: 4px;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .message-action-btn:hover {
-            color: #333;
+            color: #E85D24;
+            background-color: rgba(232, 93, 36, 0.1);
+            transform: scale(1.1);
+        }
+
+        .message-action-btn.disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            pointer-events: none;
+            transform: none;
         }
 
         /* Input Area */
@@ -789,11 +805,22 @@
                                 <div class="message-text">{{ $message->content }}</div>
                                 @if ($message->sender == 'bot')
                                     <div class="message-actions">
-                                        <button class="message-action-btn"><i class="bi bi-clipboard"></i></button>
-                                        <button class="message-action-btn"><i class="bi bi-hand-thumbs-up"></i></button>
-                                        <button class="message-action-btn"><i
-                                                class="bi bi-hand-thumbs-down"></i></button>
-                                        <button class="message-action-btn"><i
+                                        @php
+                                            $reaction = $message->reaction;
+                                            $likeClass = $reaction === 'like' ? 'text-primary' : '';
+                                            $dislikeClass = $reaction === 'dislike' ? 'text-danger' : '';
+                                            $likeHidden = $reaction === 'dislike' ? 'd-none' : '';
+                                            $dislikeHidden = $reaction === 'like' ? 'd-none' : '';
+                                        @endphp
+                                        <button class="message-action-btn copy-btn" title="Copy"><i
+                                                class="bi bi-clipboard"></i></button>
+                                        <button class="message-action-btn like-btn {{ $likeHidden }}"
+                                            title="Good response"><i
+                                                class="bi bi-hand-thumbs-up {{ $likeClass }}"></i></button>
+                                        <button class="message-action-btn dislike-btn {{ $dislikeHidden }}"
+                                            title="Bad response"><i
+                                                class="bi bi-hand-thumbs-down {{ $dislikeClass }}"></i></button>
+                                        <button class="message-action-btn" title="Regenerate"><i
                                                 class="bi bi-arrow-90deg-left"></i></button>
                                     </div>
                                 @endif
@@ -879,16 +906,12 @@
                 }
             });
 
-            // Handle form submission
-            $('#chat-form').on('submit', function(e) {
-                e.preventDefault();
-                let message = messageInput.val().trim();
-                if (!message) return;
-
-                // Append user message immediately
-                const userAvatar = '{{ substr(Auth::user()->name, 0, 1) }}';
-                const userName = '{{ Auth::user()->name }}';
-                const now = new Date().toLocaleString('en-US', {
+            // Function to render messages
+            function renderMessage(msg) {
+                const isUser = msg.sender === 'user';
+                const avatar = isUser ? '{{ substr(Auth::user()->name, 0, 1) }}' : 'AI';
+                const name = isUser ? '{{ Auth::user()->name }}' : 'Socxo Chatbot';
+                const time = new Date(msg.created_at || new Date()).toLocaleString('en-US', {
                     day: '2-digit',
                     month: 'short',
                     year: 'numeric',
@@ -897,18 +920,139 @@
                     hour12: true
                 });
 
+                let actionsHtml = '';
+                if (!isUser) {
+                    const likeClass = msg.reaction === 'like' ? 'text-primary' : '';
+                    const dislikeClass = msg.reaction === 'dislike' ? 'text-danger' : '';
+
+                    // Logic to HIDE the opposite button if one is selected
+                    // Using d-none for visibility control
+                    const likeHidden = msg.reaction === 'dislike' ? 'd-none' : '';
+                    const dislikeHidden = msg.reaction === 'like' ? 'd-none' : '';
+
+                    actionsHtml = `
+                        <div class="message-actions">
+                            <button class="message-action-btn copy-btn" title="Copy"><i class="bi bi-clipboard"></i></button>
+                            <button class="message-action-btn like-btn ${likeHidden}" title="Good response"><i class="bi bi-hand-thumbs-up ${likeClass}"></i></button>
+                            <button class="message-action-btn dislike-btn ${dislikeHidden}" title="Bad response"><i class="bi bi-hand-thumbs-down ${dislikeClass}"></i></button>
+                            <button class="message-action-btn" title="Regenerate"><i class="bi bi-arrow-90deg-left"></i></button>
+                        </div>
+                    `;
+                }
+
                 chatBox.append(`
-                    <div class="message user">
-                        <div class="message-avatar">${userAvatar}</div>
+                    <div class="message ${msg.sender}" data-id="${msg.id || ''}">
+                        <div class="message-avatar" style="${!isUser ? 'background: #f0f0f0; color: #333;' : ''}">${avatar}</div>
                         <div class="message-content">
                             <div class="message-header">
-                                <span class="message-sender">${userName}</span>
-                                <span class="message-time">${now}</span>
+                                <span class="message-sender">${name}</span>
+                                <span class="message-time">${time}</span>
                             </div>
-                            <div class="message-text">${message}</div>
+                            <div class="message-text">${msg.content}</div>
+                            ${actionsHtml}
                         </div>
                     </div>
                 `);
+            }
+
+            // ... (loadConversations function skipped) ...
+
+            // Feedback Handler
+            $(document).on('click', '.like-btn, .dislike-btn', function() {
+                const btn = $(this);
+                const icon = btn.find('i');
+                const isLike = btn.hasClass('like-btn');
+
+                // Check if ALREADY active - if so, DO NOTHING (Permanent choice)
+                if (icon.hasClass('text-primary') || icon.hasClass('text-danger')) {
+                    return;
+                }
+
+                const reaction = isLike ? 'like' : 'dislike';
+
+                // DOM Elements
+                const actionsContainer = btn.parent();
+                const otherBtn = isLike ? actionsContainer.find('.dislike-btn') : actionsContainer.find(
+                    '.like-btn');
+
+                // Find message ID
+                const messageDiv = btn.closest('.message');
+                const messageId = messageDiv.data('id');
+
+                if (!messageId) {
+                    console.error("Message ID not found");
+                    return;
+                }
+
+                // Apply new selection state
+                // 1. Highlight this icon
+                icon.addClass(isLike ? 'text-primary' : 'text-danger');
+
+                // 2. Hide the OTHER button
+                otherBtn.addClass('d-none');
+
+                // 3. Send to API
+                $.ajax({
+                    url: `/api/chat/message/${messageId}/feedback`,
+                    method: 'POST',
+                    data: {
+                        reaction: reaction
+                    },
+                    success: function(res) {
+                        console.log('Feedback saved');
+                    }
+                });
+            });
+
+            // Function to load conversations (placeholder, assuming it fetches and updates the sidebar)
+            function loadConversations() {
+                // This function would typically make an AJAX call to fetch the latest conversations
+                // and update the .chat-list-section. For now, we'll simulate a simple update.
+                console.log('Loading conversations...');
+                $.ajax({
+                    url: '/api/chat/conversations', // Adjust this endpoint as needed
+                    method: 'GET',
+                    success: function(response) {
+                        const chatListSection = $('.chat-list-section');
+                        chatListSection.empty(); // Clear existing list
+
+                        if (response.conversations && response.conversations.length > 0) {
+                            chatListSection.append(
+                                '<div class="chat-list-title" style="margin-top: 15px;">Chats Recent</div>'
+                            );
+                            response.conversations.forEach(conversation => {
+                                const newChatHtml = `
+                                    <a href="/chat/${conversation.uuid}" class="text-decoration-none text-dark">
+                                        <div class="chat-item ${initialUuid === conversation.uuid ? 'bg-light fw-bold' : ''}">
+                                            ${conversation.title.length > 30 ? conversation.title.substring(0, 30) + '...' : conversation.title}
+                                        </div>
+                                    </a>
+                                `;
+                                chatListSection.append(newChatHtml);
+                            });
+                        } else {
+                            chatListSection.append(
+                                '<div class="text-muted small p-2">No chats yet</div>');
+                        }
+                    },
+                    error: function(xhr) {
+                        console.error('Failed to load conversations:', xhr);
+                    }
+                });
+            }
+
+            // Handle form submission
+            $('#chat-form').on('submit', function(e) {
+                e.preventDefault();
+                let message = messageInput.val().trim();
+                if (!message) return;
+
+                // Render User Message Immediately
+                renderMessage({
+                    sender: 'user',
+                    content: message,
+                    created_at: new Date() // Optimistic timestamp
+                });
 
                 messageInput.val('');
                 messageInput.css('height', 'auto');
@@ -953,6 +1097,16 @@
                         // Remove typing indicator
                         $('#' + typingId).remove();
 
+                        // Render Bot Message
+                        renderMessage(response.bot_message);
+
+                        // Parse markdown for the new message
+                        const lastMsg = chatBox.find('.message.bot').last().find(
+                            '.message-text');
+                        lastMsg.html(marked.parse(lastMsg.text()));
+
+                        chatBox.scrollTop(chatBox[0].scrollHeight);
+
                         // Update current conversation ID if it was a new chat
                         if (!currentConversationId && response.conversation_id) {
                             currentConversationId = response.conversation_id;
@@ -963,55 +1117,13 @@
                                     path: newUrl
                                 }, '', newUrl);
 
-                                // Add new chat to sidebar
-                                const chatListSection = $('.chat-list-section');
-                                const noChatsMsg = chatListSection.find('.text-muted');
-
-                                if (noChatsMsg.length > 0) {
-                                    noChatsMsg.remove();
-                                    chatListSection.append(
-                                        '<div class="chat-list-title" style="margin-top: 15px;">Chats Recent</div>'
-                                    );
-                                }
-
-                                const newChatHtml = `
-                                    <a href="${newUrl}" class="text-decoration-none text-dark">
-                                        <div class="chat-item bg-light fw-bold">
-                                            ${response.conversation_title.length > 30 ? response.conversation_title.substring(0, 30) + '...' : response.conversation_title}
-                                        </div>
-                                    </a>
-                                `;
-
-                                // Insert after the title "Chats Recent"
-                                chatListSection.find('.chat-list-title').after(newChatHtml);
-
-                                // Remove active class from other items
-                                $('.chat-item').removeClass('bg-light fw-bold');
+                                // Refresh sidebar to show new chat
+                                loadConversations();
+                                initialUuid = response.conversation_uuid;
                             }
                         }
 
-                        // Parse markdown response
-                        const formattedContent = marked.parse(response.bot_message.content);
 
-                        chatBox.append(`
-                            <div class="message bot">
-                                <div class="message-avatar">AI</div>
-                                <div class="message-content">
-                                    <div class="message-header">
-                                        <span class="message-sender">Socxo Chatboot</span>
-                                        <span class="message-time">${now}</span>
-                                    </div>
-                                    <div class="message-text">${formattedContent}</div>
-                                    <div class="message-actions">
-                                        <button class="message-action-btn"><i class="bi bi-clipboard"></i></button>
-                                        <button class="message-action-btn"><i class="bi bi-hand-thumbs-up"></i></button>
-                                        <button class="message-action-btn"><i class="bi bi-hand-thumbs-down"></i></button>
-                                        <button class="message-action-btn"><i class="bi bi-arrow-90deg-left"></i></button>
-                                    </div>
-                                </div>
-                            </div>
-                        `);
-                        chatBox.scrollTop(chatBox[0].scrollHeight);
                     },
                     error: function(xhr) {
                         // Remove typing indicator
@@ -1030,6 +1142,8 @@
                     }
                 });
             });
+
+
 
             // Search functionality
             $('#search-chats').on('input', function() {

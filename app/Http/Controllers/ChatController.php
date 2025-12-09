@@ -44,7 +44,7 @@ class ChatController extends Controller
         $apiToken = $user->createToken('chat-app')->plainTextToken;
 
         $conversation = \App\Models\Conversation::where('user_id', Auth::id())->where('uuid', $uuid)->firstOrFail();
-        
+
         $conversations = \App\Models\Conversation::where('user_id', Auth::id())
             ->orderBy('updated_at', 'desc')
             ->get();
@@ -104,8 +104,30 @@ class ChatController extends Controller
             // Update user token usage
             $user->increment('token_usage', $estimatedTokens);
 
+            // Fetch recent history (Last 10 messages)
+            $history = [];
+            $recentMessages = Message::where('conversation_id', $conversationId)
+                ->orderBy('created_at', 'desc')
+                ->take(10)
+                ->get()
+                ->reverse(); // Chronological order
+
+            foreach ($recentMessages as $msg) {
+                $role = $msg->sender === 'user' ? 'user' : 'model';
+                $history[] = [
+                    'role' => $role,
+                    'parts' => [['text' => $msg->content]],
+                ];
+            }
+
+            // Prepare System Instruction with Memory
+            $systemInstruction = "You are Socxo Chatbot. Be helpful and friendly.";
+            if ($user->memory) {
+                $systemInstruction .= "\n\nUser Profile / Memory:\n" . $user->memory . "\n\nUse this information to personalize your responses.";
+            }
+
             // Get AI response
-            $aiResponseContent = $this->geminiService->generateResponse($messageContent);
+            $aiResponseContent = $this->geminiService->generateResponse($history, $systemInstruction);
             $aiTokens = $this->geminiService->estimateTokens($aiResponseContent);
 
             // Save AI message
@@ -120,6 +142,17 @@ class ChatController extends Controller
             // Update user token usage for AI response
             $user->increment('token_usage', $aiTokens);
 
+            // Update Long-Term Memory (Async optimization would be better here, but synchronous for now)
+            try {
+                $updatedMemory = $this->geminiService->updateMemory($user->memory, $messageContent, $aiResponseContent);
+                if ($updatedMemory && $updatedMemory !== $user->memory) {
+                    $user->memory = $updatedMemory;
+                    $user->save();
+                }
+            } catch (\Exception $e) {
+                \Log::warning('Memory update failed: ' . $e->getMessage());
+            }
+
             return response()->json([
                 'user_message' => $userMessage,
                 'bot_message' => $botMessage,
@@ -132,5 +165,24 @@ class ChatController extends Controller
 
             return response()->json(['error' => 'Internal Server Error: '.$e->getMessage()], 500);
         }
+    }
+
+    public function feedback(Request $request, $id)
+    {
+        $request->validate([
+            'reaction' => 'required|in:like,dislike,none',
+        ]);
+
+        $message = Message::where('user_id', Auth::id())->findOrFail($id);
+
+        if ($request->reaction === 'none') {
+            $message->reaction = null;
+        } else {
+            $message->reaction = $request->reaction;
+        }
+
+        $message->save();
+
+        return response()->json(['success' => true]);
     }
 }
